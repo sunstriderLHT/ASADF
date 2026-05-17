@@ -13,6 +13,8 @@ User Query ("Reconstruct the breach timeline...")
 ┌──────────────────────────────────────┐
 │  Prompt Shield + ReAct Guardrails    │
 │  (Thought → Action → Action Input)   │
+│  + DB Schema Prior Knowledge         │
+│  + Anti-Repetition Rule              │
 └──────────────────────────────────────┘
         │
         ▼
@@ -89,27 +91,25 @@ cp .env.example .env
 python dbBuilder.py
 
 # 5. Generate the knowledge bases for RAG
-python create_kb.py        # MITRE ATT&CK KB
-python create_sans_kb.py   # SANS FOR500 KB
+python scripts/create_kb.py        # MITRE ATT&CK KB → mitre_kb.txt
+python scripts/create_sans_kb.py   # SANS FOR500 KB  → sans_kb.txt
 ```
 
 ## Usage
 
 ```bash
-# Streamlit web UI (recommended)
-streamlit run app.py
-
-# CLI mode — prints the full forensic report to stdout
-python inferenceLayer.py
+# Streamlit web UI
+streamlit run app.py --server.fileWatcherType none
 ```
 
 ### Web UI Features
 
-- **Chat interface** for iterative forensic questioning
+- **Quick Investigation Actions** — one-click buttons for common forensic queries: full timeline report, credential theft tracing, exfiltration node identification
+- **Chat interface** for free-form forensic questioning
 - **Real-time chain-of-thought** — the agent's reasoning steps (Thought → Action → Action Input) stream live in the UI
 - **RAG-augmented reasoning** — the agent can query a FAISS vector store combining MITRE ATT&CK and SANS FOR500 knowledge to ground its analysis in established forensic theory
+- **Dynamic response format** — the agent adapts its output: comprehensive 3-part report for timeline reconstruction requests, concise direct answers for narrow questions
 - **Chain of custody** — sidebar shows a SHA-256 hash of the evidence database with one-click integrity verification
-- **Structured output** — final reports follow a Markdown template: Executive Summary → Chronological Timeline table → 4-phase Attack Chain Analysis with MITRE T-codes and SANS theory citations
 
 ## Guardrails
 
@@ -117,6 +117,8 @@ python inferenceLayer.py
 - **Source Anchoring**: every event in the final report must cite its `Source_Log_ID`
 - **ReAct Format Lock**: the `Thought` / `Action` / `Action Input` / `Final Answer` keywords are enforced to prevent parser failures
 - **Knowledge-Grounded Analysis**: reports must cite MITRE ATT&CK T-codes and SANS FOR500 forensic theory for each attack phase
+- **Anti-Repetition Rule**: the agent is instructed to never call the same tool with the same input consecutively, preventing infinite loops
+- **DB Schema Prior Knowledge**: the agent receives the database architecture upfront to skip cold-start schema discovery
 
 ## Knowledge Bases
 
@@ -124,8 +126,8 @@ The RAG pipeline uses two complementary knowledge sources:
 
 | KB | Content | Generator |
 |---|---|---|
-| MITRE ATT&CK | T1003 Credential Dumping, T1203 Exploitation, T1074 Data Staged, T1020 Automated Exfiltration | `create_kb.py` |
-| SANS FOR500 | Windows forensic artifact interpretation — Prefetch/Amcache (execution evidence), ShellBags/LNK (file/folder access), EVTX (authentication) | `create_sans_kb.py` |
+| MITRE ATT&CK | T1003 Credential Dumping, T1203 Exploitation, T1074 Data Staged, T1020 Automated Exfiltration | `scripts/create_kb.py` |
+| SANS FOR500 | Windows forensic artifact interpretation — Prefetch/Amcache (execution evidence), ShellBags/LNK (file/folder access), EVTX (authentication) | `scripts/create_sans_kb.py` |
 
 ### MITRE ATT&CK Mappings
 
@@ -140,14 +142,18 @@ The RAG pipeline uses two complementary knowledge sources:
 
 ```
 .
-├── app.py                  # Streamlit web UI (with RAG pipeline)
-├── inferenceLayer.py       # Standalone CLI agent
-├── dbBuilder.py            # Database schema + mock data injection
-├── create_kb.py            # MITRE ATT&CK knowledge base generator
-├── create_sans_kb.py       # SANS FOR500 knowledge base generator
-├── forensic_evidence.db    # SQLite evidence database (generated)
-├── .env.example            # API key configuration template
+├── app.py                       # Streamlit web UI (with RAG pipeline)
+├── inferenceLayer.py            # Standalone CLI agent
+├── dbBuilder.py                 # Database schema + mock data injection
+├── scripts/
+│   ├── create_kb.py             # MITRE ATT&CK knowledge base generator
+│   └── create_sans_kb.py        # SANS FOR500 knowledge base generator
+├── forensic_evidence.db         # SQLite evidence database (generated)
+├── mitre_kb.txt                 # MITRE knowledge base (generated)
+├── sans_kb.txt                  # SANS knowledge base (generated)
+├── .env.example                 # API key configuration template
 ├── start_claude.bat.example
+├── .gitignore
 ├── CLAUDE.md
 └── README.md
 ```

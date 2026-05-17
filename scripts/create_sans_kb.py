@@ -16,7 +16,7 @@ SANS FOR500 Windows Forensic Analysis Knowledge Base:
 - Forensic Interpretation: Event ID 4624 (Successful Logon) and 4625 (Failed Logon) track account access. Event ID 4688 (Process Creation) tracks command-line executions (e.g., executing registry dumps).
 """
 
-with open("sans_kb.txt", "w", encoding="utf-8") as f:
+with open("../sans_kb.txt", "w", encoding="utf-8") as f:
     f.write(sans_content)
 
 print("✅ SANS FOR500 取证知识库 sans_kb.txt 生成成功！")

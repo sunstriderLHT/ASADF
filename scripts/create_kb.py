@@ -15,7 +15,7 @@ Indicator: Execution of compression tools like 'WINRAR.EXE' followed by large ou
 Forensic Significance: Attackers compress stolen data (like SQL exports) to evade DLP (Data Loss Prevention) and reduce transfer time before exfiltration.
 """
 
-with open("mitre_kb.txt", "w", encoding="utf-8") as f:
+with open("../mitre_kb.txt", "w", encoding="utf-8") as f:
     f.write(kb_content)
 
 print("MITRE 知识库 mitre_kb.txt 生成成功！")
