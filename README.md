@@ -78,8 +78,7 @@ git clone https://github.com/sunstriderLHT/ASADF.git
 cd ASADF
 
 # 2. Install dependencies
-pip install streamlit langchain-openai langchain-community langchain-huggingface \
-            faiss-cpu sentence-transformers python-dotenv
+pip install -r requirements.txt
 
 # 3. Configure API key
 cp .env.example .env
