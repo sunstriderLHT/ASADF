@@ -6,6 +6,11 @@ from langchain_openai import ChatOpenAI
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.tools import Tool
+from langchain_core.documents import Document
 
 load_dotenv()
 
@@ -34,9 +39,43 @@ def init_agent():
     db = SQLDatabase.from_uri("sqlite:///forensic_evidence.db")
     llm = ChatOpenAI(model="deepseek-chat", temperature=0.0)
 
+    # ==========================================
+    # 手动构建 RAG 威胁情报检索工具（免疫一切版本冲突）
+    # ==========================================
+    # 正常的向量库初始化
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    with open("mitre_kb.txt", "r", encoding="utf-8") as f:
+        mitre_text = f.read()
+    with open("sans_kb.txt", "r", encoding="utf-8") as f:
+        sans_text = f.read()
+
+    # 合并为一个强大的 Document
+    combined_docs = [Document(page_content=mitre_text + "\n\n" + sans_text)]
+
+    # 存入 FAISS 向量库
+    vectorstore = FAISS.from_documents(combined_docs, embeddings)
+    retriever = vectorstore.as_retriever()
+
+    # 手写执行函数
+    def run_retriever(query: str) -> str:
+        try:
+            matched_docs = retriever.invoke(query)
+        except AttributeError:
+            matched_docs = retriever.get_relevant_documents(query)
+        return "\n\n".join([doc.page_content for doc in matched_docs])
+
+    # 注册为 Agent 工具，在描述中明确告诉大模型去查 SANS
+    threat_intel_tool = Tool(
+        name="Forensic_and_Threat_Intelligence_Search",
+        description="Search this knowledge base for BOTH MITRE ATT&CK hacker tactics AND SANS FOR500 Forensic theories (like what Prefetch or ShellBags prove).",
+        func=run_retriever
+    )
+    # ==========================================
+    # 3. 将 RAG Tool 注入到原有的 SQL Agent 中
     return create_sql_agent(
         llm=llm,
         db=db,
+        extra_tools=[threat_intel_tool],
         verbose=True,
         agent_type="zero-shot-react-description",
         agent_executor_kwargs={"handle_parsing_errors": True}
@@ -105,6 +144,8 @@ if user_prompt := st.chat_input("Enter your forensic query (e.g., Reconstruct th
         "### 3. Detailed Attack Chain & Cross-Correlation Analysis\n"
         "Provide a detailed phase-by-phase forensic analysis. For each phase of the attack, you MUST include:\n"
         "- **Attacker Intent**: What was the attacker trying to achieve?\n"
+        "- **MITRE ATT&CK Tactic**: Map the behavior to a specific T-code using the Knowledge Base.\n"
+        "- **SANS Forensic Theory**: Explain what the specific artifact (e.g., Prefetch, ShellBags, EVTX) proves, strictly citing the SANS FOR500 theory from the Knowledge Base.\n"
         "- **Correlated Evidence**: How do specific logs (reference the Source_Log_IDs) corroborate each other?\n"
         "- **Result/Impact**: What was the outcome of this action?\n\n"
         "Break this down into the following phases:\n"

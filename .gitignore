@@ -5,8 +5,9 @@ start_claude.bat
 # SQLite database (regenerated via dbBuilder.py)
 *.db
 
-# Generated knowledge base
+# Generated knowledge bases
 mitre_kb.txt
+sans_kb.txt
 
 # Python
 __pycache__/

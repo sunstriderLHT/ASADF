@@ -2,7 +2,7 @@
 
 HKUST ISOM 5080 · Group 3
 
-An LLM-powered forensic investigation agent that reconstructs data breach timelines by querying a SQLite evidence database. Built with LangChain's SQL agent toolkit and DeepSeek, following the ReAct (Reasoning + Acting) pattern.
+An LLM-powered forensic investigation agent that reconstructs data breach timelines by querying a SQLite evidence database, augmented with a RAG pipeline over MITRE ATT&CK and SANS FOR500 knowledge bases. Built with LangChain, FAISS, and DeepSeek.
 
 ## Architecture
 
@@ -19,20 +19,26 @@ User Query ("Reconstruct the breach timeline...")
 ┌──────────────────────────────────────┐
 │  LangChain SQL Agent (DeepSeek)      │
 │  zero-shot-react-description         │
+│                                      │
+│  Tools:                              │
+│  ├── sql_db_query (evidence DB)      │
+│  └── Forensic_Threat_Intel_Search    │
+│      (RAG over MITRE + SANS KBs)     │
 └──────────────────────────────────────┘
-        │
-        ▼
-┌──────────────────────────────────────┐
-│  SQLite Forensic Evidence DB         │
-│  evtx_logs / prefetch_amcache_logs   │
-│  user_behavior_logs / exfiltration   │
-└──────────────────────────────────────┘
-        │
-        ▼
+        │                        │
+        ▼                        ▼
+┌──────────────────┐   ┌────────────────────────┐
+│  SQLite Evidence │   │  FAISS Vector Store     │
+│  DB (4 tables)   │   │  MITRE ATT&CK +         │
+│                  │   │  SANS FOR500 KBs        │
+└──────────────────┘   └────────────────────────┘
+        │                        │
+        ▼                        ▼
 ┌──────────────────────────────────────┐
 │  Structured Forensic Report          │
 │  Executive Summary → Timeline →      │
-│  4-Phase Attack Chain Analysis       │
+│  4-Phase Attack Chain Analysis      │
+│  (with MITRE T-codes + SANS theory) │
 └──────────────────────────────────────┘
 ```
 
@@ -70,7 +76,8 @@ git clone https://github.com/sunstriderLHT/ASADF.git
 cd ASADF
 
 # 2. Install dependencies
-pip install streamlit langchain-openai langchain-community python-dotenv
+pip install streamlit langchain-openai langchain-community langchain-huggingface \
+            faiss-cpu sentence-transformers python-dotenv
 
 # 3. Configure API key
 cp .env.example .env
@@ -81,8 +88,9 @@ cp .env.example .env
 # 4. Build the evidence database
 python dbBuilder.py
 
-# 5. (Optional) Generate MITRE ATT&CK knowledge base
-python create_kb.py
+# 5. Generate the knowledge bases for RAG
+python create_kb.py        # MITRE ATT&CK KB
+python create_sans_kb.py   # SANS FOR500 KB
 ```
 
 ## Usage
@@ -99,16 +107,27 @@ python inferenceLayer.py
 
 - **Chat interface** for iterative forensic questioning
 - **Real-time chain-of-thought** — the agent's reasoning steps (Thought → Action → Action Input) stream live in the UI
+- **RAG-augmented reasoning** — the agent can query a FAISS vector store combining MITRE ATT&CK and SANS FOR500 knowledge to ground its analysis in established forensic theory
 - **Chain of custody** — sidebar shows a SHA-256 hash of the evidence database with one-click integrity verification
-- **Structured output** — final reports follow a Markdown template: Executive Summary → Chronological Timeline table → 4-phase Attack Chain Analysis
+- **Structured output** — final reports follow a Markdown template: Executive Summary → Chronological Timeline table → 4-phase Attack Chain Analysis with MITRE T-codes and SANS theory citations
 
 ## Guardrails
 
 - **Prompt Shield**: SQL-fetched data is treated as raw strings; injection attempts like "Ignore previous rules" are blocked at the prompt level
 - **Source Anchoring**: every event in the final report must cite its `Source_Log_ID`
 - **ReAct Format Lock**: the `Thought` / `Action` / `Action Input` / `Final Answer` keywords are enforced to prevent parser failures
+- **Knowledge-Grounded Analysis**: reports must cite MITRE ATT&CK T-codes and SANS FOR500 forensic theory for each attack phase
 
-## MITRE ATT&CK Mappings
+## Knowledge Bases
+
+The RAG pipeline uses two complementary knowledge sources:
+
+| KB | Content | Generator |
+|---|---|---|
+| MITRE ATT&CK | T1003 Credential Dumping, T1203 Exploitation, T1074 Data Staged, T1020 Automated Exfiltration | `create_kb.py` |
+| SANS FOR500 | Windows forensic artifact interpretation — Prefetch/Amcache (execution evidence), ShellBags/LNK (file/folder access), EVTX (authentication) | `create_sans_kb.py` |
+
+### MITRE ATT&CK Mappings
 
 | Technique | ID | Evidence |
 |---|---|---|
@@ -117,18 +136,18 @@ python inferenceLayer.py
 | Data Staged | T1074 | `WINRAR.EXE` execution before exfiltration |
 | Automated Exfiltration | T1020 | Bulk SQL export + encrypted TCP spike |
 
-Run `python create_kb.py` to generate `mitre_kb.txt` with detailed forensic significance notes.
-
 ## File Structure
 
 ```
 .
-├── app.py                  # Streamlit web UI
+├── app.py                  # Streamlit web UI (with RAG pipeline)
 ├── inferenceLayer.py       # Standalone CLI agent
 ├── dbBuilder.py            # Database schema + mock data injection
 ├── create_kb.py            # MITRE ATT&CK knowledge base generator
+├── create_sans_kb.py       # SANS FOR500 knowledge base generator
 ├── forensic_evidence.db    # SQLite evidence database (generated)
 ├── .env.example            # API key configuration template
 ├── start_claude.bat.example
-└── CLAUDE.md
+├── CLAUDE.md
+└── README.md
 ```

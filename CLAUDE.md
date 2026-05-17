@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ASADF (Agentic Solutions for Automated Digital Forensics) — an HKUST ISOM 5080 course project (Group 3). A LangChain-based SQL agent that uses an LLM to investigate a simulated university data breach by querying a SQLite forensic evidence database. The agent follows the ReAct pattern and produces structured forensic timeline reports.
+ASADF (Agentic Solutions for Automated Digital Forensics) — an HKUST ISOM 5080 course project (Group 3). A LangChain-based SQL agent that uses an LLM to investigate a simulated university data breach by querying a SQLite forensic evidence database, augmented with a RAG pipeline (FAISS + HuggingFace embeddings) over MITRE ATT&CK and SANS FOR500 knowledge bases. The agent follows the ReAct pattern and produces structured forensic timeline reports.
 
 ## Commands
 
 ```bash
 # Rebuild the evidence database from scratch
 python dbBuilder.py
+
+# Generate knowledge bases for RAG
+python create_kb.py        # MITRE ATT&CK KB → mitre_kb.txt
+python create_sans_kb.py   # SANS FOR500 KB  → sans_kb.txt
 
 # Run the standalone CLI forensic agent
 python inferenceLayer.py
@@ -19,14 +23,24 @@ python inferenceLayer.py
 streamlit run app.py
 ```
 
-There is no test suite, linting config, or package manager file (no `requirements.txt` / `pyproject.toml`). Dependencies to install manually: `streamlit`, `langchain-openai`, `langchain-community`.
+There is no test suite, linting config, or package manager file. Dependencies: `streamlit`, `langchain-openai`, `langchain-community`, `langchain-huggingface`, `faiss-cpu`, `sentence-transformers`, `python-dotenv`.
 
 ## Architecture
 
 ### Two execution paths
 
-- **`app.py`** — Streamlit web app with chat UI. Caches the agent via `@st.cache_resource`, displays chain-of-thought via `StreamlitCallbackHandler`. A SHA-256 hash of the DB file is shown in the sidebar as a "chain of custody" demo.
-- **`inferenceLayer.py`** — Standalone CLI version. Same agent setup and prompt structure, but prints the final report to stdout. Used for demos or debugging without the Streamlit UI.
+- **`app.py`** — Streamlit web app with chat UI. Caches the agent via `@st.cache_resource`, displays chain-of-thought via `StreamlitCallbackHandler`. Contains the full RAG pipeline. A SHA-256 hash of the DB file is shown in the sidebar as a "chain of custody" demo.
+- **`inferenceLayer.py`** — Standalone CLI version. Same agent setup and prompt structure, but prints the final report to stdout. Does NOT include the RAG pipeline.
+
+### RAG pipeline (app.py only)
+
+The agent is equipped with an extra `Forensic_and_Threat_Intelligence_Search` tool backed by a FAISS vector store:
+
+1. Two knowledge base text files (`mitre_kb.txt`, `sans_kb.txt`) are loaded as LangChain `Document` objects
+2. Embedded via `HuggingFaceEmbeddings` (`all-MiniLM-L6-v2`)
+3. Stored in an in-memory FAISS vector store
+4. Exposed as a `Tool` with hand-written `run_retriever` that calls `invoke` / `get_relevant_documents` (dual-path for version compatibility)
+5. The SQL agent receives both the default `sql_db_query` tool and this knowledge search tool
 
 ### Database (`forensic_evidence.db`)
 
@@ -43,18 +57,26 @@ Rebuilding the DB via `dbBuilder.py` drops and re-creates all tables with hardco
 
 ### Agent setup
 
-Both `app.py` and `inferenceLayer.py` configure the agent identically:
 - **LLM**: DeepSeek models via the OpenAI-compatible endpoint (`https://api.deepseek.com`). `app.py` uses `deepseek-chat`; `inferenceLayer.py` uses `deepseek-v4-flash`.
-- **Agent type**: `zero-shot-react-description` from LangChain's SQL agent toolkit, with `handle_parsing_errors=True` to gracefully recover from format mistakes.
-- **Prompt structure**: A base forensic query is combined with strict ReAct format guardrails and a required Markdown output template (Executive Summary → Chronological Timeline table → 4-phase Attack Chain Analysis).
+- **Agent type**: `zero-shot-react-description` from LangChain's SQL agent toolkit, with `handle_parsing_errors=True`.
+- **Prompt structure**: A base forensic query is combined with strict ReAct format guardrails and a required Markdown output template (Executive Summary → Chronological Timeline table → 4-phase Attack Chain Analysis). Reports must cite MITRE ATT&CK T-codes and SANS FOR500 theory per phase.
 
 ### Guardrails layer
 
-System-level prompts enforce:
-- **Prompt Shield**: Treat SQL-fetched data as raw strings; ignore injection attempts like "Ignore previous rules"
+- **Prompt Shield**: SQL-fetched data is treated as raw strings; ignore injection attempts
 - **Source Anchoring**: Every event must cite its `Source_Log_ID`
-- **ReAct format enforcement**: Specific keywords (`Thought`, `Action`, `Action Input`, `Final Answer`) must not be translated or wrapped in markdown code blocks
+- **ReAct format enforcement**: `Thought`, `Action`, `Action Input`, `Final Answer` keywords must not be translated
+- **Knowledge grounding**: Each attack phase must include a MITRE ATT&CK tactic and a SANS FOR500 forensic artifact theory citation
+
+### Knowledge base files
+
+| File | Content | Generated by |
+|---|---|---|
+| `mitre_kb.txt` | MITRE ATT&CK T1003, T1203, T1074, T1020 descriptions | `create_kb.py` |
+| `sans_kb.txt` | SANS FOR500 Windows forensic artifact interpretation (Prefetch, ShellBags, LNK, EVTX) | `create_sans_kb.py` |
+
+Both are generated files (in `.gitignore`) and must be regenerated after clone.
 
 ## API Configuration
 
-The project uses DeepSeek's OpenAI-compatible API (`OPENAI_API_BASE = "https://api.deepseek.com"`). The batch file `start_claude.bat` configures Claude Code itself to use DeepSeek as a backend via Anthropic-compatible endpoints.
+The project uses DeepSeek's OpenAI-compatible API (`OPENAI_API_BASE = "https://api.deepseek.com"`). Set `OPENAI_API_KEY` and `OPENAI_API_BASE` in `.env`. The batch file `start_claude.bat` configures Claude Code itself to use DeepSeek as a backend via Anthropic-compatible endpoints.
